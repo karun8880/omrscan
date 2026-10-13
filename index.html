@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d3557">
+<title>OMR Scanner</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">OMR</div>
+  <nav>
+    <button data-view="scan" class="tab active">Scan</button>
+    <button data-view="history" class="tab">Scans <span id="pendingBadge" class="badge" hidden>0</span></button>
+    <button data-view="print" class="tab">Print</button>
+    <button data-view="settings" class="tab">Settings</button>
+  </nav>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <!-- SCAN -->
+  <section id="view-scan" class="view">
+    <div id="cvLoading" class="loading">Loading the scanner engine (first time only, about 10 MB)…</div>
+    <div id="scanStart" class="card center" hidden>
+      <p class="lead">Lay a filled sheet flat in good light and hold the phone above it.</p>
+      <button id="btnStartCam" class="primary big">Start camera</button>
+      <label class="secondary file-btn">Use a photo instead<input id="filePhoto" type="file" accept="image/*" capture="environment" hidden></label>
+      <p class="muted small" id="scanMode"></p>
+    </div>
+    <div id="camWrap" class="cam" hidden>
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="camHint" class="cam-hint">Fit all four black squares in the frame</div>
+      <div class="cam-bar">
+        <button id="btnStopCam" class="ghost">Stop</button>
+        <button id="btnShutter" class="shutter" aria-label="Capture"></button>
+        <span id="camCount" class="cam-count">0 scanned</span>
+      </div>
+    </div>
+    <div id="review" class="review" hidden>
+      <div class="review-head">
+        <div>
+          <div id="rvTitle" class="rv-title"></div>
+          <div id="rvSub" class="muted small"></div>
+        </div>
+        <div id="rvStatus" class="pill"></div>
+      </div>
+      <div class="enr-row">
+        <label>Enrollment</label>
+        <input id="rvEnr" inputmode="numeric" maxlength="9" autocomplete="off">
+        <span id="rvName" class="muted"></span>
+      </div>
+      <div class="legend small">
+        <span><i class="dot ok"></i>read</span><span><i class="dot multi"></i>multiple</span>
+        <span><i class="dot unc"></i>check</span><span><i class="dot fix"></i>corrected</span>
+        <span class="muted">Tap a circle to change it</span>
+      </div>
+      <div class="sheet-wrap"><canvas id="rvCanvas"></canvas></div>
+      <div class="review-bar">
+        <button id="btnDiscard" class="ghost">Discard</button>
+        <button id="btnRetake" class="secondary">Retake</button>
+        <button id="btnAccept" class="primary">Accept</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="view-history" class="view" hidden>
+    <div class="card">
+      <div class="row between">
+        <div>
+          <div id="syncLine" class="lead"></div>
+          <div id="syncErr" class="err small"></div>
+        </div>
+        <div class="row gap">
+          <button id="btnSync" class="primary">Sync now</button>
+          <button id="btnCsv" class="secondary">Export CSV</button>
+        </div>
+      </div>
+    </div>
+    <div id="histList" class="list"></div>
+    <div class="row gap end"><button id="btnClearSynced" class="ghost small">Remove synced scans from this phone</button></div>
+  </section>
+
+  <!-- PRINT -->
+  <section id="view-print" class="view" hidden>
+    <div class="card">
+      <h2>Print OMR sheets</h2>
+      <div id="printLive">
+        <div class="field"><label>Paper code</label>
+          <div class="row gap"><input id="prPaper" placeholder="UCS802" autocapitalize="characters"><button id="btnPrLoad" class="secondary">Load</button></div>
+        </div>
+        <div class="field"><label>Exam</label><select id="prExam"></select></div>
+      </div>
+      <div id="printDemo" hidden>
+        <p class="muted small">Demo mode: sheets are not registered or signed. Connect a backend in Settings for real exams.</p>
+        <div class="grid2">
+          <div class="field"><label>Course name</label><input id="dmCourse" value="Compiler Construction"></div>
+          <div class="field"><label>Paper code</label><input id="dmPaper" value="UCS802"></div>
+          <div class="field"><label>Exam ID</label><input id="dmExam" value="QUIZ1"></div>
+          <div class="field"><label>Exam title</label><input id="dmTitle" value="Quiz 1"></div>
+          <div class="field"><label>Questions (1–100)</label><input id="dmNq" type="number" min="1" max="100" value="40"></div>
+          <div class="field"><label>Sets</label><select id="dmSets"><option>1</option><option>2</option><option>3</option><option selected>4</option></select></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Number of sheets</label><input id="prCount" type="number" min="1" max="1000" value="60"></div>
+        <div class="field"><label>Exam date (printed)</label><input id="prDate" placeholder="20 Oct 2026"></div>
+      </div>
+      <p class="muted small">Sets are interleaved A, B, C, D… so neighbouring students get different sets. Print at 100% / Actual size.</p>
+      <button id="btnGenerate" class="primary">Generate PDF</button>
+      <div id="prMsg" class="small"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view" hidden>
+    <div class="card">
+      <h2>Account</h2>
+      <div id="whoami" class="lead"></div>
+      <div id="gsiButton"></div>
+      <button id="btnSignOut" class="ghost" hidden>Sign out</button>
+    </div>
+    <div class="card">
+      <h2>Courses on this phone</h2>
+      <div class="row gap"><input id="stPaper" placeholder="Paper code, e.g. UCS802" autocapitalize="characters"><button id="btnAddCourse" class="secondary">Add</button></div>
+      <div id="courseList" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>Scanning</h2>
+      <label class="check"><input type="checkbox" id="stAuto"> Accept automatically when nothing needs checking and the enrollment is on the roster</label>
+    </div>
+    <div class="card">
+      <h2>Connection</h2>
+      <div class="field"><label>Backend URL (Apps Script web app)</label><input id="stUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="field"><label>Google OAuth client ID</label><input id="stClient" placeholder="…apps.googleusercontent.com"></div>
+      <button id="btnSaveConn" class="primary">Save</button>
+      <p class="muted small">Leave both empty to use demo mode: scans stay on this phone and can be exported as CSV.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/layout.js"></script>
+<script src="js/recognize.js"></script>
+<script src="js/sheetpdf.js"></script>
+<script src="js/store.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="js/app.js"></script>
+<script async src="vendor/opencv.js" onload="OMRApp.cvScriptLoaded()"></script>
+</body>
+</html>
