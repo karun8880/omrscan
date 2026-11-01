@@ -225,15 +225,16 @@
   }
   function enrollmentStatus() {
     const v = $('rvEnr').value.trim();
-    const ok = /^\d{9}$/.test(v);
+    const nd = R.L.enrollment.digits;                 // 9 or 10, from the sheet's own layout
+    const ok = v.length === nd && /^\d+$/.test(v);
     const roster = R.course && R.course.roster;
     const hasRoster = roster && Object.keys(roster).length > 0;
-    return { v, ok, onRoster: ok && hasRoster ? !!roster[v] : null, name: ok && hasRoster ? roster[v] : '' };
+    return { v, ok, nd, onRoster: ok && hasRoster ? !!roster[v] : null, name: ok && hasRoster ? roster[v] : '' };
   }
 
   function updateReview() {
     const st = enrollmentStatus();
-    $('rvName').textContent = !st.ok ? 'Enter all 9 digits' : st.onRoster === false ? 'Not on the roster' : st.name || '';
+    $('rvName').textContent = !st.ok ? `Enter all ${st.nd} digits` : st.onRoster === false ? 'Not on the roster' : st.name || '';
     $('rvName').className = !st.ok || st.onRoster === false ? 'err' : 'muted';
     $('rvEnr').classList.toggle('bad', !st.ok || st.onRoster === false);
     const unc = R.sel.filter((s) => s.state === 'uncertain' && !s.fixed).length;
@@ -312,18 +313,22 @@
       if (s.set.has(best.k)) s.set.delete(best.k); else { if (!s.multi) s.set.clear(); s.set.add(best.k); }
       s.fixed = true;
     } else {
-      const v = $('rvEnr').value.padEnd(9, '?').split('');
+      const nd = L.enrollment.digits;
+      const v = $('rvEnr').value.padEnd(nd, '?').split('');
       v[best.col] = String(best.dgt);
-      $('rvEnr').value = v.join('').slice(0, 9);
+      $('rvEnr').value = v.join('').slice(0, nd);
     }
     vibrate(10);
     updateReview();
   });
-  $('rvEnr').addEventListener('input', () => { $('rvEnr').value = $('rvEnr').value.replace(/[^0-9?]/g, '').slice(0, 9); updateReview(); });
+  $('rvEnr').addEventListener('input', () => {
+    if (!R) return;
+    $('rvEnr').value = $('rvEnr').value.replace(/[^0-9?]/g, '').slice(0, R.L.enrollment.digits); updateReview();
+  });
 
   async function accept(auto, quiet) {
     const st = enrollmentStatus();
-    if (!st.ok) { toast('Enter the full 9-digit enrollment number'); $('rvEnr').focus(); return; }
+    if (!st.ok) { toast(`Enter the full ${st.nd}-digit enrollment number`); $('rvEnr').focus(); return; }
     const answers = answersString();
     const unc = (answers.match(/\?/g) || []).length;
     if (!auto && unc && !confirm(`${unc} question(s) are still unclear. They will be saved as "?" and the student's result stays pending until a coordinator resolves them. Save anyway?`)) return;
@@ -589,8 +594,8 @@
         const paper = $('dmPaper').value.trim().toUpperCase().replace(/\|/g, ''), exam = $('dmExam').value.trim().replace(/\|/g, '');
         let serial = parseInt(localStorage.getItem('omr.demoSerial') || '1', 10);
         sheets = Array.from({ length: count }, (_, i) => {
-          const f = { paper, exam, set: 'ABCD'[i % sets], nq, nopt: 4, layout: 'L100A', serial: String(serial + i).padStart(6, '0'), sig: '000000' };
-          return { layoutId: 'L100A', course: $('dmCourse').value, paper, exam, examTitle: $('dmTitle').value, date, set: f.set, nq, serial: f.serial, qrText: OMRLayout.encodeQR(f) };
+          const f = { paper, exam, set: 'ABCD'[i % sets], nq, nopt: 4, layout: OMRLayout.DEFAULT, serial: String(serial + i).padStart(6, '0'), sig: '000000' };
+          return { layoutId: OMRLayout.DEFAULT, course: $('dmCourse').value, paper, exam, examTitle: $('dmTitle').value, date, set: f.set, nq, serial: f.serial, qrText: OMRLayout.encodeQR(f) };
         });
         localStorage.setItem('omr.demoSerial', String(serial + count));
         file = `${paper}_${exam}_demo.pdf`;
@@ -613,6 +618,7 @@
   // ---------------- settings ----------------
   function renderSettings() {
     const s = Settings.get();
+    $('appVersion').textContent = `App version 5 · new sheets: ${OMRLayout.get(OMRLayout.DEFAULT).enrollment.digits}-digit enrollment`;
     const off = s.offline || {};
     $('stKeys').value = off.keys || ''; $('stPlus').value = off.plus != null ? off.plus : 1;
     $('stMinus').value = off.minus != null ? off.minus : 0; $('stMultiWrong').checked = off.multipleWrong !== false;

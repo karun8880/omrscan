@@ -62,7 +62,7 @@ button.big { font-size: 1.1rem; padding: 14px 28px; display: block; margin: 16px
 .rv-title { font-weight: 700; }
 .enr-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 8px; flex-wrap: wrap; }
 .enr-row label { font-weight: 600; }
-.enr-row input { width: 9.5em; flex: none; font-size: 1.2rem; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+.enr-row input { width: 10.5em; flex: none; font-size: 1.2rem; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
 .enr-row input.bad { border-color: var(--bad); background: #fff5f6; }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 8px; align-items: center; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2.5px solid; margin-right: 4px; vertical-align: -1px; }

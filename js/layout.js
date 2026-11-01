@@ -1,5 +1,8 @@
 /*
- * OMR layout template L100A — the single source of truth for sheet geometry.
+ * OMR layout templates — the single source of truth for sheet geometry.
+ *   L100A: 9-digit enrollment number (first release; kept so sheets already printed still read)
+ *   L100B: 10-digit enrollment number (default for new sheets)
+ * Both share the page, markers, QR position and answer grid; only the enrollment block differs.
  * All units are millimetres on an A4 portrait page (210 x 297).
  * The PDF generator draws from this file and the scanner reads from it,
  * so they can never drift apart. Change geometry ONLY by adding a new layout ID.
@@ -40,6 +43,16 @@
     },
   };
 
+  // Same sheet with a 10th enrollment column. Column 10 ends at x = 85.5 mm, 6.5 mm clear of the
+  // instructions box (x = 92 mm), so nothing else moves.
+  const L100B = Object.assign({}, L100A, {
+    id: 'L100B',
+    enrollment: Object.assign({}, L100A.enrollment, { digits: 10 }),
+  });
+
+  const DEFAULT = 'L100B';
+  const BY_DIGITS = { 9: 'L100A', 10: 'L100B' };
+
   function markerCenters(L) {
     const m = L.marker, c = m.inset + m.size / 2, W = L.page.w, H = L.page.h;
     // order: TL, TR, BR, BL
@@ -76,7 +89,8 @@
     return f;
   }
 
-  const layouts = { L100A };
-  return { layouts, get: (id) => layouts[id] || null, markerCenters, enrollmentBubble,
+  const layouts = { L100A, L100B };
+  return { layouts, DEFAULT, BY_DIGITS, get: (id) => layouts[id] || null,
+    forDigits: (d) => layouts[BY_DIGITS[d]] || null, markerCenters, enrollmentBubble,
     answerBubble, questionLabelPos, encodeQR, decodeQR };
 });

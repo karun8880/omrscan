@@ -1,6 +1,6 @@
 // Service worker: caches the app shell and the 10 MB OpenCV engine so the scanner
 // opens instantly and works without a network. Bump VERSION on every deploy.
-const VERSION = 'omr-v3';
+const VERSION = 'omr-v5';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.json', 'icon-192.png', 'icon-512.png',
   'js/layout.js', 'js/recognize.js', 'js/sheetpdf.js', 'js/store.js', 'js/score.js', 'js/app.js',
@@ -9,7 +9,11 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache (GitHub Pages lets browsers keep files for 10 min),
+  // so a new version can never be stored with old copies of its files.
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))

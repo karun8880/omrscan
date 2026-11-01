@@ -49,7 +49,7 @@
    * opts: { layoutId, course, paper, exam, examTitle, date, set, nq, serial, qrText, setsCount }
    */
   function drawSheet(doc, qrcodeLib, opts) {
-    const L = OMRLayout.get(opts.layoutId || 'L100A');
+    const L = OMRLayout.get(opts.layoutId || OMRLayout.DEFAULT);
     if (!L) throw new Error('Unknown layout ' + opts.layoutId);
 
     // Corner markers
