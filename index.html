@@ -31,7 +31,30 @@
       <p class="lead">Lay a filled sheet flat in good light and hold the phone above it.</p>
       <button id="btnStartCam" class="primary big">Start camera</button>
       <label class="secondary file-btn">Use a photo instead<input id="filePhoto" type="file" accept="image/*" capture="environment" hidden></label>
+      <div class="or">or</div>
+      <label class="secondary file-btn">Process scanned files (PDF or images)<input id="fileBatch" type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp" multiple hidden></label>
+      <p class="muted small">Pick one multi-page PDF from the scanner, or many JPG/PNG files. Everything is read on this device; no internet needed.</p>
       <p class="muted small" id="scanMode"></p>
+    </div>
+    <div id="batchPanel" class="card" hidden>
+      <div class="row between">
+        <div class="grow">
+          <div class="lead" id="bTitle">Scanned files</div>
+          <div id="bLine" class="muted small"></div>
+        </div>
+        <button id="bStop" class="ghost">Stop</button>
+      </div>
+      <div class="bstats">
+        <span class="pill good" id="bSaved"></span>
+        <span class="pill warn" id="bReview"></span>
+        <span class="pill bad" id="bFailed"></span>
+      </div>
+      <div class="row gap wrap">
+        <button id="bReviewBtn" class="primary" hidden>Review unclear sheets</button>
+        <button id="bSkippedBtn" class="secondary" hidden>Review skipped sheets</button>
+      </div>
+      <p id="bBW" class="banner" hidden></p>
+      <details id="bFailWrap" hidden><summary>Pages that could not be read</summary><div id="bFailList" class="small"></div></details>
     </div>
     <div id="camWrap" class="cam" hidden>
       <video id="video" playsinline muted></video>
@@ -85,7 +108,8 @@
       </div>
     </div>
     <div id="histList" class="list"></div>
-    <div class="row gap end"><button id="btnClearSynced" class="ghost small">Remove synced scans from this phone</button></div>
+    <div class="row gap end"><button id="btnClearSynced" class="ghost small">Remove synced scans from this device</button>
+      <button id="btnClearAll" class="ghost small">Delete all scans on this device</button></div>
   </section>
 
   <!-- PRINT -->
@@ -135,6 +159,20 @@
     <div class="card">
       <h2>Scanning</h2>
       <label class="check"><input type="checkbox" id="stAuto"> Accept automatically when nothing needs checking and the enrollment is on the roster</label>
+      <label class="check"><input type="checkbox" id="stBW"> Read black-and-white scans anyway. <span class="muted small">Not recommended: black-and-white mode erases faint or half-filled marks, which then count as blank without any warning. Scan in Grayscale instead.</span></label>
+    </div>
+    <div class="card">
+      <h2>Answer keys for offline scoring</h2>
+      <p class="muted small">Used for the score columns in <b>Export CSV</b>, so you can get results without the Google Sheet.
+        One line per exam and set: <code>ExamId,Set,Key</code>. Key: one letter per question, <code>[AC]</code> if either is correct,
+        <code>X</code> for a cancelled question. The ExamId must match the one printed on the sheets.</p>
+      <textarea id="stKeys" rows="5" spellcheck="false" placeholder="MST-ODD26,A,ABCDDCBAAB[AC]DXCBA&#10;MST-ODD26,B,DCBAABCD..."></textarea>
+      <div class="grid2">
+        <div class="field"><label>Marks per correct answer</label><input id="stPlus" type="number" step="0.25" value="1"></div>
+        <div class="field"><label>Marks deducted per wrong answer</label><input id="stMinus" type="number" step="0.25" min="0" value="0"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="stMultiWrong" checked> Count a question with more than one circle filled as wrong (otherwise as blank)</label>
+      <div class="row gap"><button id="btnSaveKeys" class="secondary">Save keys</button><span id="keysMsg" class="small"></span></div>
     </div>
     <div class="card">
       <h2>Connection</h2>
@@ -152,6 +190,7 @@
 <script src="js/recognize.js"></script>
 <script src="js/sheetpdf.js"></script>
 <script src="js/store.js"></script>
+<script src="js/score.js"></script>
 <script src="vendor/jsQR.js"></script>
 <script src="vendor/qrcode.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>

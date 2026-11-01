@@ -123,6 +123,7 @@
     bySerial: (serialKey) => tx('readonly', (s) => s.index('serialKey').getAll(serialKey)),
     pending: () => tx('readonly', (s) => s.index('status').getAll('pending')),
     remove: (id) => tx('readwrite', (s) => s.delete(id)),
+    clearAll: () => tx('readwrite', (s) => s.clear()),
     async clearSynced() {
       const all = await Queue.all();
       for (const r of all) if (r.status === 'synced') await Queue.remove(r.scanId);

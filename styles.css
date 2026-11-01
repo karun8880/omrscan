@@ -80,3 +80,15 @@ button.big { font-size: 1.1rem; padding: 14px 28px; display: block; margin: 16px
 .banner { padding: 10px 14px; background: #fdf1dd; color: #6d4708; text-align: center; font-size: .9rem; }
 .toast { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); z-index: 40; background: #1b1f24; color: #fff;
   padding: 10px 16px; border-radius: 22px; box-shadow: 0 4px 16px rgba(0,0,0,.25); max-width: 90%; }
+
+/* batch */
+.or { margin: 10px 0 6px; color: var(--muted); font-size: .85rem; }
+.bstats { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.bstats .pill:empty { display: none; }
+.row.wrap { flex-wrap: wrap; }
+#bFailWrap { margin-top: 10px; }
+#bFailList div { padding: 4px 0; border-top: 1px solid var(--line); }
+textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: .9rem ui-monospace, Menlo, Consolas, monospace; margin-bottom: 12px; }
+code { font: .85em ui-monospace, Menlo, Consolas, monospace; background: #eef1f4; padding: 1px 4px; border-radius: 4px; }
+.check + .check { margin-top: 10px; }
+#bBW { border-radius: 8px; text-align: left; margin: 0 0 10px; }

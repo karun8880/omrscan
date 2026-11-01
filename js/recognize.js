@@ -18,6 +18,8 @@
     gapT: 0.15,             // a lone mark must beat the runner-up by this much
     sampleR: 0.62,          // sample inside this fraction of the bubble radius
     minRing: 14,            // minimum outline darkness (0-255) proving a block is aligned
+    bwMaxMid: 0.018,        // below this share of mid-grey pixels the page is a black-and-white scan
+    allowBW: false,         // read black-and-white scans anyway (faint marks can be lost)
   };
 
   function oddInt(v) { v = Math.max(3, Math.round(v)); return v % 2 ? v : v + 1; }
@@ -348,6 +350,19 @@
     const L = OMRLayout.get(qr.layout);
     if (!L) { warped.delete(); return { ok: false, error: 'Unknown sheet layout ' + qr.layout }; }
 
+    // Black-and-white scans (scanner "B&W"/"Text" mode) keep no grey: the printed bubble outlines and
+    // any faint or half-pressure mark are thresholded away before we see them, so a faint answer
+    // would read as blank with nothing to flag it. Measured on test data: B&W scans 0.7-1.1% mid-grey
+    // pixels, grayscale scans 2.9-7.2%, phone photos 6.4%+.
+    let mid = 0, nmid = 0;
+    { const W = warped.cols, H = warped.rows, m = 25 * L.pxPerMm, g = warped.data;
+      for (let y = m; y < H - m; y += 3) for (let x = m; x < W - m; x += 3) { const v = g[y * W + x]; nmid++; if (v > 70 && v < 190) mid++; } }
+    const bw = mid / Math.max(1, nmid) < opts.bwMaxMid;
+    if (bw && !opts.allowBW) {
+      warped.delete();
+      return { ok: false, bw: true, error: 'Scanned in black-and-white — faint marks are lost in this mode. Rescan in Grayscale or Colour (200–300 dpi)' };
+    }
+
     const dark = normalise(cv, warped);
 
     // Verify the warp: all four markers must be solid where the layout puts them.
@@ -369,7 +384,10 @@
     const e = L.enrollment;
     const enrB = [];
     for (let c = 0; c < e.digits; c++) for (let d = 0; d <= 9; d++) enrB.push(OMRLayout.enrollmentBubble(L, c, d));
-    const eOff = blockOffset(dark, L, enrB);
+    // B&W scans have no printed outlines to align on; a flatbed scan is geometrically exact, so the
+    // marker-based warp is used as is.
+    const noShift = { dx: 0, dy: 0, s: undefined };
+    const eOff = bw ? noShift : blockOffset(dark, L, enrB);
     // Answer columns
     const a = L.answers;
     const colOff = [];
@@ -377,13 +395,13 @@
       const bs = [];
       for (let q = c * a.rowsPerColumn; q < Math.min(qr.nq, (c + 1) * a.rowsPerColumn); q++)
         for (let k = 0; k < a.options.length; k++) bs.push(OMRLayout.answerBubble(L, q, k));
-      colOff.push(bs.length ? blockOffset(dark, L, bs) : { dx: 0, dy: 0, s: undefined });
+      colOff.push(bs.length && !bw ? blockOffset(dark, L, bs) : { dx: 0, dy: 0, s: undefined });
     }
     // Printed circle outlines must be found for every block; a weak ring score means
     // the grid is not where the layout expects it (bent sheet, wrong warp) — never guess.
-    const ringScores = [eOff.s].concat(colOff.filter((o) => o.s !== undefined).map((o) => o.s));
+    const ringScores = [eOff.s].concat(colOff.map((o) => o.s)).filter((v) => v !== undefined);
     const ringMax = Math.max(...ringScores);
-    if (ringScores.some((v) => v < opts.minRing || v < 0.45 * ringMax)) {
+    if (!bw && ringScores.some((v) => v < opts.minRing || v < 0.45 * ringMax)) {
       dark.delete(); warped.delete();
       return { ok: false, error: 'Bubble grid not aligned — flatten the sheet and retake', ringScores };
     }
@@ -411,7 +429,7 @@
     const answers = items.map((it) => (it.state === 'marked' ? a.options[it.choice] : it.state === 'blank' ? '-' : it.state === 'multiple' ? '*' : '?')).join('');
     const uncertain = items.filter((i) => i.state === 'uncertain').length + enrItems.filter((i) => i.state !== 'marked').length;
 
-    return { ok: true, qr, layout: L, corners: det.corners, enrollment, enrItems, answers, items, uncertain,
+    return { ok: true, bw, qr, layout: L, corners: det.corners, enrollment, enrItems, answers, items, uncertain,
       offsets: { enrollment: eOff, columns: colOff }, ringScores, baseline: Math.round(base * 100) / 100, warped };
   }
 

@@ -1,10 +1,11 @@
 // Service worker: caches the app shell and the 10 MB OpenCV engine so the scanner
 // opens instantly and works without a network. Bump VERSION on every deploy.
-const VERSION = 'omr-v1';
+const VERSION = 'omr-v3';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.json', 'icon-192.png', 'icon-512.png',
-  'js/layout.js', 'js/recognize.js', 'js/sheetpdf.js', 'js/store.js', 'js/app.js',
+  'js/layout.js', 'js/recognize.js', 'js/sheetpdf.js', 'js/store.js', 'js/score.js', 'js/app.js',
   'vendor/opencv.js', 'vendor/jsQR.js', 'vendor/qrcode.js', 'vendor/jspdf.umd.min.js',
+  'vendor/pdf.min.js', 'vendor/pdf.worker.min.js',
 ];
 
 self.addEventListener('install', (e) => {

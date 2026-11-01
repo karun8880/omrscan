@@ -138,7 +138,7 @@
 
   async function processImage(img, fromCamera) {
     let res;
-    try { res = OMRRecognize.recognize(cv, jsQR, img); } catch (e) { console.error(e); res = { ok: false, error: 'Could not read this image' }; }
+    try { res = OMRRecognize.recognize(cv, jsQR, img, { allowBW: !!Settings.get().allowBW }); } catch (e) { console.error(e); res = { ok: false, error: 'Could not read this image' }; }
     if (!res.ok) {
       if (fromCamera) { $('camHint').textContent = res.error; cam.hist = []; } else toast(res.error, 4000);
       return;
@@ -165,7 +165,11 @@
   // ---------------- review ----------------
   let R = null; // current review state
 
-  async function openReview(res) {
+  /**
+   * mode: undefined (camera / single photo) | 'batch' (decide silently: save if clean, else return
+   * 'review') | 'batch-review' (show a queued batch sheet). Returns 'saved', 'review' or 'shown'.
+   */
+  async function openReview(res, mode) {
     const qr = res.qr, L = res.layout;
     let course = Courses.get(qr.paper);
     if (!Settings.demo() && Auth.valid() && (!course || !course.exams || !course.exams[qr.exam])) {
@@ -173,9 +177,8 @@
     }
     // display canvas: canonical image downscaled to DISP px/mm
     const disp = document.createElement('canvas');
-    const full = document.createElement('canvas');
-    cv.imshow(full, res.warped);
-    res.warped.delete();
+    const full = res.full || matToCanvas(res.warped);
+    if (res.warped) { res.warped.delete(); res.warped = null; }
     disp.width = L.page.w * DISP; disp.height = L.page.h * DISP;
     disp.getContext('2d').drawImage(full, 0, 0, disp.width, disp.height);
     const thumb = document.createElement('canvas');
@@ -197,15 +200,24 @@
 
     $('rvTitle').textContent = `${qr.paper} · ${qr.exam} · Set ${qr.set}`;
     const examName = course && course.exams && course.exams[qr.exam] ? course.exams[qr.exam].title : '';
-    $('rvSub').textContent = `Sheet ${qr.serial} · ${qr.nq} questions${examName ? ' · ' + examName : ''}`;
+    $('rvSub').textContent = `Sheet ${qr.serial} · ${qr.nq} questions${examName ? ' · ' + examName : ''}`
+      + (res.label ? ` · ${res.label}` : '') + (mode === 'batch-review' ? ` · ${Batch.queue.length} more to check` : '');
     $('rvEnr').value = res.enrollment.split('').map((c) => (/\d/.test(c) ? c : '?')).join('');
-    updateReview();
+    if (mode !== 'batch') updateReview();
 
-    const autoOk = Settings.get().autoAccept && !R.dup && res.uncertain === 0 && enrollmentStatus().ok && enrollmentStatus().onRoster !== false;
-    if (autoOk && cam.stream) { await accept(true); return; }
-    $('camWrap').hidden = true; $('scanStart').hidden = true; $('review').hidden = false;
+    const clean = !R.dup && res.uncertain === 0 && enrollmentStatus().ok && enrollmentStatus().onRoster !== false;
+    if (mode === 'batch') {
+      if (clean) { await accept(true, true); return 'saved'; }
+      R = null;
+      return 'review';
+    }
+    if (clean && Settings.get().autoAccept && cam.stream) { await accept(true); return 'saved'; }
+    $('camWrap').hidden = true; $('scanStart').hidden = true; $('batchPanel').hidden = true; $('review').hidden = false;
     window.scrollTo(0, 0);
+    return 'shown';
   }
+
+  function matToCanvas(mat) { const c = document.createElement('canvas'); cv.imshow(c, mat); return c; }
 
   function rowChar(s) { return s.set.size === 0 ? '-' : s.set.size > 1 ? '*' : R.L.answers.options[[...s.set][0]]; }
   function answersString() {
@@ -309,7 +321,7 @@
   });
   $('rvEnr').addEventListener('input', () => { $('rvEnr').value = $('rvEnr').value.replace(/[^0-9?]/g, '').slice(0, 9); updateReview(); });
 
-  async function accept(auto) {
+  async function accept(auto, quiet) {
     const st = enrollmentStatus();
     if (!st.ok) { toast('Enter the full 9-digit enrollment number'); $('rvEnr').focus(); return; }
     const answers = answersString();
@@ -324,21 +336,167 @@
       serialKey: R.qr.paper + '|' + R.qr.serial, nq: R.qr.nq, enrollment: st.v, name: st.name || '',
       answers, uncertain: R.res.uncertain, corrections, scannedBy: Auth.email || 'demo',
       deviceTime: new Date().toISOString(), status: Settings.demo() ? 'local' : 'pending', thumb: R.thumb,
+      source: (R.res.label || (cam.stream ? 'camera' : 'photo')) + (R.res.bw ? ' (black-and-white scan)' : ''),
     };
     await Queue.put(rec);
     cam.count++;
     $('camCount').textContent = cam.count + ' scanned';
     refreshBadge();
-    toast(`✓ ${st.v}${st.name ? ' · ' + st.name : ''}${corrections.length ? ' · ' + corrections.length + ' corrected' : ''}`);
+    if (!quiet) toast(`✓ ${st.v}${st.name ? ' · ' + st.name : ''}${corrections.length ? ' · ' + corrections.length + ' corrected' : ''}`);
     R = null;
-    $('review').hidden = true;
     if (!Settings.demo()) Sync.schedule(1500);
+    if (quiet) return;                               // batch: saved silently, no screen change
+    $('review').hidden = true;
+    if (Batch.reviewing) { nextBatchReview(); return; }
     if (cam.stream) { cam.waitClear = true; resumeCamera(); } else $('scanStart').hidden = false;
   }
 
   $('btnAccept').onclick = () => accept(false);
-  $('btnRetake').onclick = () => { R = null; $('review').hidden = true; if (cam.stream) resumeCamera(); else $('scanStart').hidden = false; };
-  $('btnDiscard').onclick = () => { R = null; $('review').hidden = true; if (cam.stream) { cam.waitClear = true; resumeCamera(); } else $('scanStart').hidden = false; };
+  $('btnRetake').onclick = () => {
+    if (Batch.reviewing) { Batch.skipped.push(R.res); R = null; nextBatchReview(); return; }  // "Skip"
+    R = null; $('review').hidden = true; if (cam.stream) resumeCamera(); else $('scanStart').hidden = false;
+  };
+  $('btnDiscard').onclick = () => {
+    if (Batch.reviewing) { if (!confirm('Discard this sheet? It will not be saved.')) return; Batch.discarded++; R = null; nextBatchReview(); return; }
+    R = null; $('review').hidden = true; if (cam.stream) { cam.waitClear = true; resumeCamera(); } else $('scanStart').hidden = false;
+  };
+
+  // ---------------- batch: scanned files (PDF or images), fully offline ----------------
+  const Batch = { running: false, stop: false, reviewing: false, queue: [], skipped: [], failed: [], saved: 0, discarded: 0, pages: 0, files: 0 };
+  const MAXDIM = 3200;   // same cap as single photos; 300 dpi A4 scans are 3508 px tall
+  let pdfjsP = null;
+
+  function loadPdfJs() {
+    if (pdfjsP) return pdfjsP;
+    pdfjsP = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'vendor/pdf.min.js';
+      sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js'; resolve(window.pdfjsLib); };
+      sc.onerror = () => { pdfjsP = null; reject(new Error('Could not load the PDF reader')); };
+      document.head.appendChild(sc);
+    });
+    return pdfjsP;
+  }
+
+  function toImageData(source, w, h) {
+    const k = Math.min(1, MAXDIM / Math.max(w, h));
+    work.width = Math.round(w * k); work.height = Math.round(h * k);
+    const ctx = work.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, work.width, work.height);
+    ctx.drawImage(source, 0, 0, work.width, work.height);
+    return ctx.getImageData(0, 0, work.width, work.height);
+  }
+
+  /** Yields one page image at a time, so a 300-page PDF never sits in memory at once. */
+  async function* pagesOf(files) {
+    for (const f of files) {
+      Batch.files++;
+      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+        let doc;
+        try { doc = await (await loadPdfJs()).getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise; }
+        catch (e) { yield { label: f.name, error: 'Could not open this PDF (' + e.message + ')' }; continue; }
+        for (let p = 1; p <= doc.numPages; p++) {
+          if (Batch.stop) break;
+          const page = await doc.getPage(p);
+          const v1 = page.getViewport({ scale: 1 });
+          const vp = page.getViewport({ scale: Math.min(6, MAXDIM / Math.max(v1.width, v1.height)) });
+          const c = document.createElement('canvas');
+          c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          const label = doc.numPages > 1 ? `${f.name} p${p}` : f.name;
+          yield { label, img: ctx.getImageData(0, 0, c.width, c.height) };
+          page.cleanup();
+        }
+        doc.destroy();
+      } else {
+        let bmp;
+        try { bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }); }
+        catch (e) { yield { label: f.name, error: 'Not an image this browser can open — use PDF, JPG or PNG (not TIFF)' }; continue; }
+        yield { label: f.name, img: toImageData(bmp, bmp.width, bmp.height) };
+        if (bmp.close) bmp.close();
+      }
+    }
+  }
+
+  function canvasToBlob(c) { return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)); }
+
+  async function runBatch(files) {
+    if (!cv) { toast('The scanner engine is still loading — try again in a moment'); return; }
+    if (Batch.running) return;
+    Object.assign(Batch, { running: true, stop: false, reviewing: false, queue: [], skipped: [], failed: [], saved: 0, discarded: 0, pages: 0, files: 0 });
+    $('batchPanel').hidden = false;
+    renderBatch(`Opening ${files.length} file(s)…`);
+    try {
+      for await (const pg of pagesOf(files)) {
+        if (Batch.stop) break;
+        Batch.pages++;
+        renderBatch(`Reading ${pg.label}…`);
+        await new Promise((r) => setTimeout(r, 0));          // let the progress line paint
+        if (pg.error) { Batch.failed.push({ label: pg.label, error: pg.error }); continue; }
+        let res;
+        try { res = OMRRecognize.recognize(cv, jsQR, pg.img, { allowBW: !!Settings.get().allowBW }); } catch (e) { console.error(e); res = { ok: false, error: 'Could not read this page' }; }
+        if (!res.ok) { Batch.failed.push({ label: pg.label, error: res.error, bw: !!res.bw }); continue; }
+        res.label = pg.label;
+        res.full = matToCanvas(res.warped); res.warped.delete(); res.warped = null;
+        const outcome = await openReview(res, 'batch');
+        if (outcome === 'saved') Batch.saved++;
+        else { res.blob = await canvasToBlob(res.full); res.full = null; Batch.queue.push(res); }  // keep a small JPEG, not the canvas
+      }
+    } catch (e) { console.error(e); Batch.failed.push({ label: 'batch', error: e.message }); }
+    Batch.running = false;
+    renderBatch(Batch.stop ? 'Stopped.' : 'Finished.');
+    refreshBadge();
+    if (!Settings.demo()) Sync.schedule(500);
+  }
+
+  function renderBatch(line) {
+    if (line !== undefined) $('bLine').textContent = line;
+    $('bTitle').textContent = Batch.running ? `Reading scanned files — page ${Batch.pages}` : `Scanned files: ${Batch.pages} page(s) read`;
+    $('bSaved').textContent = Batch.saved ? `${Batch.saved} saved` : '';
+    $('bReview').textContent = Batch.queue.length ? `${Batch.queue.length} to check` : '';
+    $('bFailed').textContent = Batch.failed.length ? `${Batch.failed.length} not read` : '';
+    $('bStop').hidden = !Batch.running;
+    $('bReviewBtn').hidden = Batch.running || !Batch.queue.length;
+    $('bReviewBtn').textContent = `Review ${Batch.queue.length} unclear sheet(s)`;
+    $('bSkippedBtn').hidden = Batch.running || !Batch.skipped.length || Batch.queue.length > 0;
+    $('bSkippedBtn').textContent = `Review ${Batch.skipped.length} skipped sheet(s)`;
+    const nbw = Batch.failed.filter((f) => f.bw).length;
+    $('bBW').hidden = !nbw;
+    $('bBW').textContent = `${nbw} page(s) were scanned in black-and-white, which erases faint marks. Rescan them in Grayscale or Colour at 200–300 dpi and process that file.`;
+    $('bFailWrap').hidden = !Batch.failed.length;
+    $('bFailList').innerHTML = Batch.failed.map((f) => `<div><b>${esc(f.label)}</b> — ${esc(f.error)}</div>`).join('');
+  }
+
+  async function nextBatchReview() {
+    const item = Batch.queue.shift();
+    if (!item) {
+      Batch.reviewing = false;
+      $('btnRetake').textContent = 'Retake';
+      $('review').hidden = true; $('scanStart').hidden = false; $('batchPanel').hidden = false;
+      renderBatch(Batch.skipped.length ? `${Batch.skipped.length} sheet(s) skipped.` : 'All sheets checked.');
+      return;
+    }
+    const bmp = await createImageBitmap(item.blob);
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    item.full = c;
+    Batch.reviewing = true;
+    $('btnRetake').textContent = 'Skip';
+    await openReview(item, 'batch-review');
+    item.full = null;
+  }
+
+  $('fileBatch').onchange = (e) => {
+    const files = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    e.target.value = '';
+    if (files.length) runBatch(files);
+  };
+  $('bStop').onclick = () => { Batch.stop = true; };
+  $('bReviewBtn').onclick = () => nextBatchReview();
+  $('bSkippedBtn').onclick = () => { Batch.queue = Batch.skipped; Batch.skipped = []; nextBatchReview(); };
 
   // ---------------- history ----------------
   async function refreshBadge() {
@@ -349,8 +507,8 @@
     const all = await Queue.all();
     const pending = all.filter((r) => r.status === 'pending').length;
     $('syncLine').textContent = Settings.demo()
-      ? `${all.length} scan(s) on this phone (demo mode — export as CSV)`
-      : `${all.length} scan(s) on this phone · ${pending} waiting to sync${Sync.running ? ' · syncing…' : ''}`;
+      ? `${all.length} scan(s) on this device (demo mode — export as CSV)`
+      : `${all.length} scan(s) on this device · ${pending} waiting to sync${Sync.running ? ' · syncing…' : ''}`;
     $('syncErr').textContent = Sync.lastError || '';
     $('btnSync').hidden = Settings.demo();
     const list = $('histList');
@@ -367,16 +525,35 @@
   }
   $('btnSync').onclick = async () => { await Sync.run(); renderHistory(); };
   $('btnClearSynced').onclick = async () => { await Queue.clearSynced(); renderHistory(); };
+  $('btnClearAll').onclick = async () => {
+    const all = await Queue.all();
+    const unsent = all.filter((r) => r.status === 'pending').length;
+    const msg = `Delete all ${all.length} scan(s) on this device?` + (unsent ? ` ${unsent} have NOT been sent to the Google Sheet and will be lost.` : '')
+      + ' Export the CSV first if you need it.';
+    if (!all.length || !confirm(msg)) return;
+    await Queue.clearAll(); refreshBadge(); renderHistory();
+  };
   $('btnCsv').onclick = async () => {
     const all = await Queue.all();
-    const head = ['scanId', 'deviceTime', 'paper', 'exam', 'set', 'serial', 'enrollment', 'name', 'answers', 'corrections', 'status', 'serverStatus'];
+    const off = Settings.get().offline || {};
+    const table = OMRScore.parseKeyTable(off.keys);
+    const scored = Object.keys(table.keys).length > 0;
+    const rules = { plus: Number(off.plus) || 1, minus: Math.abs(Number(off.minus) || 0), multiple: off.multipleWrong === false ? 'blank' : 'wrong' };
+    const head = ['scanId', 'deviceTime', 'paper', 'exam', 'set', 'serial', 'enrollment', 'name', 'answers', 'corrections', 'status', 'serverStatus', 'source']
+      .concat(scored ? ['correct', 'wrong', 'blank', 'multiple', 'unresolved', 'score', 'maxScore', 'scoreStatus'] : []);
+    all.forEach((r) => { if (scored) Object.assign(r, OMRScore.scoreRecord(r, table, rules)); });
+    // oldest first, so the file reads in scanning order
+    all.sort((a, b) => a.deviceTime.localeCompare(b.deviceTime));
     const rows = all.map((r) => head.map((h) => {
       let v = h === 'corrections' ? (r.corrections || []).map((c) => `${c.field}:${c.from}>${c.to}`).join(' ') : r[h];
       v = v == null ? '' : String(v);
-      if (h === 'enrollment' || h === 'serial' || h === 'answers') v = "'" + v; // keep leading zeros / dashes in Excel
+      // An answer string starting with '-' (Q1 blank) would be read by Excel as a formula; the
+      // apostrophe keeps it as text. Nothing else is prefixed, so R/Python read the file as is.
+      if (h === 'answers' && /^[-+=@]/.test(v)) v = "'" + v;
       return '"' + v.replace(/"/g, '""') + '"';
     }).join(','));
-    const blob = new Blob([[head.join(','), ...rows].join('\n')], { type: 'text/csv' });
+    // BOM so Excel opens UTF-8 names correctly
+    const blob = new Blob(['\ufeff' + [head.join(','), ...rows].join('\r\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'omr-scans.csv'; a.click();
   };
   Sync.listeners.push(() => { refreshBadge(); if (!$('view-history').hidden) renderHistory(); });
@@ -436,6 +613,10 @@
   // ---------------- settings ----------------
   function renderSettings() {
     const s = Settings.get();
+    const off = s.offline || {};
+    $('stKeys').value = off.keys || ''; $('stPlus').value = off.plus != null ? off.plus : 1;
+    $('stMinus').value = off.minus != null ? off.minus : 0; $('stMultiWrong').checked = off.multipleWrong !== false;
+    $('stBW').checked = !!s.allowBW;
     $('stUrl').value = s.backendUrl; $('stClient').value = s.clientId; $('stAuto').checked = !!s.autoAccept;
     $('whoami').textContent = Settings.demo() ? 'Demo mode — no sign-in needed' : Auth.valid() ? 'Signed in as ' + Auth.email : 'Not signed in';
     $('btnSignOut').hidden = !Auth.valid();
@@ -456,6 +637,14 @@
     renderSettings();
   };
   $('stAuto').onchange = () => Settings.set({ autoAccept: $('stAuto').checked });
+  $('stBW').onchange = () => Settings.set({ allowBW: $('stBW').checked });
+  $('btnSaveKeys').onclick = () => {
+    const t = OMRScore.parseKeyTable($('stKeys').value);
+    Settings.set({ offline: { keys: $('stKeys').value, plus: Number($('stPlus').value) || 1,
+      minus: Math.abs(Number($('stMinus').value) || 0), multipleWrong: $('stMultiWrong').checked } });
+    const n = Object.keys(t.keys).length;
+    $('keysMsg').innerHTML = (n ? `Saved ${n} key(s). ` : 'Saved. ') + (t.errors.length ? `<span class="err">Check ${esc(t.errors.join('; '))}</span>` : '');
+  };
   $('btnSaveConn').onclick = () => {
     Settings.set({ backendUrl: $('stUrl').value.trim(), clientId: $('stClient').value.trim() });
     initAuth(); renderSettings(); updateMode(); toast('Saved');
