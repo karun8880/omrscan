@@ -50,7 +50,7 @@
     enrollment: Object.assign({}, L100A.enrollment, { digits: 10 }),
   });
 
-  const DEFAULT = 'L100B';
+  const DEFAULT = 'L100A';
   const BY_DIGITS = { 9: 'L100A', 10: 'L100B' };
 
   function markerCenters(L) {
