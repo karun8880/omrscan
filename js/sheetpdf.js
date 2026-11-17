@@ -124,8 +124,7 @@
       '   the matching circle in each column.',
       '3. Fill each circle completely. Do not tick or cross.',
       '4. Fill only ONE circle per question.',
-      '5. Do not erase. To change an answer, ask the',
-      '   invigilator for a fresh sheet.',
+      '5. Do not erase. ',
       '6. Do not fold, staple or write near the black squares',
       '   or the QR code.',
     ];
