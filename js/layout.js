@@ -47,7 +47,7 @@
   // instructions box (x = 92 mm), so nothing else moves.
   const L100B = Object.assign({}, L100A, {
     id: 'L100B',
-    enrollment: Object.assign({}, L100A.enrollment, { digits: 10 }),
+    enrollment: Object.assign({}, L100A.enrollment, { digits: 9 }),
   });
 
   const DEFAULT = 'L100A';
