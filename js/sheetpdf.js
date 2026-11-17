@@ -179,7 +179,7 @@
 
   /** sheets: array of opts; returns the jsPDF document */
   function buildPDF(jsPDF, qrcodeLib, sheets) {
-    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     sheets.forEach((s, i) => { if (i) doc.addPage(); drawSheet(doc, qrcodeLib, s); });
     return doc;
   }
