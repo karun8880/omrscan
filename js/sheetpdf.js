@@ -81,7 +81,7 @@
     doc.setFontSize(9);
     doc.text('Paper code: ' + opts.paper + '     Exam: ' + (opts.examTitle || opts.exam), h.x, h.y + 10);
     doc.text('Date: ' + (opts.date || '________________') + '     Questions: ' + opts.nq, h.x, h.y + 15);
-    doc.text('Name: ______________________________   Signature: ________________', h.x, h.y + 24);
+    doc.text('Name: ______________________________   Group: ________________', h.x, h.y + 24);
     // Set letter, large and boxed
     doc.setDrawColor(INK);
     doc.setLineWidth(0.5);
